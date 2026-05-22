@@ -1,0 +1,10 @@
+services:
+  syncwatch:
+    build: .
+    image: syncwatch
+    container_name: syncwatch
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+    restart: unless-stopped
