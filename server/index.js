@@ -35,7 +35,8 @@ app.get('*', (req, res) => {
 
 // --- WebSocket handling ---
 wss.on('connection', (ws) => {
-  // Per-connection identity, populated on `join`.
+  // Per-connection identity. `join` may override `id` with a client-generated
+  // UUID so reconnects keep the same identity within a session.
   ws.id = crypto.randomUUID();
   ws.roomCode = null;
   ws.username = null;
@@ -56,9 +57,11 @@ wss.on('connection', (ws) => {
     if (room) {
       broadcast(ws.roomCode, {
         type: 'user_left',
+        userId: ws.id,
         username: ws.username,
         userCount: room.users.length,
         newHostId: room.hostId,
+        users: publicUsers(room),
       });
     }
   });
@@ -69,6 +72,7 @@ function handleMessage(ws, msg) {
     case 'join': {
       // Room codes are case-insensitive.
       const code = String(msg.roomCode || '').toLowerCase();
+      if (msg.userId) ws.id = String(msg.userId);
       const user = {
         id: ws.id,
         username: msg.username,
@@ -79,23 +83,27 @@ function handleMessage(ws, msg) {
       ws.username = msg.username;
       const room = joinRoom(code, user);
 
-      // Send current room state to the joiner.
+      // Send current room state to the joiner. `selfId` lets the client
+      // identify itself in the users list.
       ws.send(
         JSON.stringify({
           type: 'room_state',
+          selfId: ws.id,
           users: publicUsers(room),
           hostId: room.hostId,
         }),
       );
-      // Notify everyone else.
+      // Notify everyone else with the updated full user list.
       broadcast(
         code,
         {
           type: 'user_joined',
+          userId: user.id,
           username: user.username,
           color: user.color,
           userCount: room.users.length,
           isHost: room.hostId === user.id,
+          users: publicUsers(room),
         },
         ws.id,
       );
@@ -175,6 +183,7 @@ function handleMessage(ws, msg) {
         username: ws.username,
         name: msg.name,
         size: msg.size,
+        fingerprint: msg.fingerprint,
       });
       break;
     }

@@ -1,16 +1,27 @@
 import { useNavigate } from 'react-router-dom';
+import { useRoomStore } from '../stores/useRoomStore';
+import { useToast } from '../contexts/ToastContext';
 
 interface RoomHeaderProps {
   roomCode: string;
 }
 
-/** Room info bar: code display, copy link, online count, subtitle + leave buttons. */
+/** Room info bar: code display, copy link, online count, leave button. */
 export default function RoomHeader({ roomCode }: RoomHeaderProps) {
   const navigate = useNavigate();
+  const users = useRoomStore((s) => s.users);
+  const status = useRoomStore((s) => s.connectionStatus);
+  const { show } = useToast();
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/room/${roomCode}`);
-    // TODO(polish phase): show "Link copied!" toast.
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        `${window.location.origin}/room/${roomCode}`,
+      );
+      show('Link copied!', 'success');
+    } catch {
+      show('Could not copy link', 'error');
+    }
   };
 
   return (
@@ -28,7 +39,21 @@ export default function RoomHeader({ roomCode }: RoomHeaderProps) {
         </button>
       </div>
       <div className="flex items-center gap-3">
-        {/* TODO: online user count, subtitle (CC) button */}
+        <div
+          className="group relative flex items-center gap-1 text-sm"
+          title={users.map((u) => u.username).join(', ')}
+        >
+          <span
+            className={
+              status === 'connected'
+                ? 'h-2 w-2 rounded-full bg-success'
+                : 'h-2 w-2 animate-pulse rounded-full bg-warning'
+            }
+          />
+          <span className="text-text-secondary">
+            {users.length} online
+          </span>
+        </div>
         <button
           onClick={() => navigate('/')}
           className="rounded-md border border-border px-2 py-1 text-xs text-text-secondary transition-colors hover:border-border-hover hover:text-error"

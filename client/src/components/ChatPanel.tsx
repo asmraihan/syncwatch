@@ -1,22 +1,34 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRoomStore } from '../stores/useRoomStore';
+import { useWebSocketSend } from '../contexts/WebSocketContext';
 import ChatMessageItem from './ChatMessage';
 
 /** Chat / activity sidebar: message list + input. */
 export default function ChatPanel() {
   const messages = useRoomStore((s) => s.messages);
   const [draft, setDraft] = useState('');
+  const { send } = useWebSocketSend();
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const send = () => {
+  // Auto-scroll to the bottom whenever a new message arrives.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  const submit = () => {
     const content = draft.trim();
     if (!content) return;
-    // TODO(chat phase): emit chat message over WebSocket.
+    send({ type: 'chat', content });
     setDraft('');
   };
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-1 overflow-y-auto p-3 scrollbar-thin">
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-2 overflow-y-auto p-3 scrollbar-thin"
+      >
         {messages.length === 0 ? (
           <p className="text-sm text-text-muted">No messages yet.</p>
         ) : (
@@ -27,13 +39,15 @@ export default function ChatPanel() {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+          maxLength={500}
           placeholder="Type a message..."
-          className="flex-1 rounded-lg border border-border bg-bg-tertiary px-3 py-2 text-sm placeholder:text-text-muted focus:border-accent focus:outline-none"
+          className="flex-1 rounded-lg border border-border bg-bg-tertiary px-3 py-2 text-sm placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
         />
         <button
-          onClick={send}
-          className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover"
+          onClick={submit}
+          disabled={!draft.trim()}
+          className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
         >
           Send
         </button>

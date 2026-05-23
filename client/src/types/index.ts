@@ -39,12 +39,20 @@ export interface FileMeta {
   name: string;
   size: number;
   type: string;
+  /** Truncated SHA-256 over file head + tail. Optional for back-compat. */
+  fingerprint?: string;
 }
 
 // ---- WebSocket message protocol ----
 
 export type ClientMessage =
-  | { type: 'join'; roomCode: string; username: string; color: string }
+  | {
+      type: 'join';
+      roomCode: string;
+      userId: string;
+      username: string;
+      color: string;
+    }
   | { type: 'chat'; content: string }
   | {
       type: 'sync';
@@ -61,22 +69,26 @@ export type ClientMessage =
   | { type: 'buffer_start' }
   | { type: 'buffer_end' }
   | { type: 'subtitle_share'; label: string; cues: SubtitleCue[] }
-  | { type: 'file_info'; name: string; size: number }
+  | { type: 'file_info'; name: string; size: number; fingerprint?: string }
   | { type: 'ping'; clientTime: number };
 
 export type ServerMessage =
   | {
       type: 'user_joined';
+      userId: string;
       username: string;
       color: string;
       userCount: number;
       isHost: boolean;
+      users: RoomUser[];
     }
   | {
       type: 'user_left';
+      userId: string;
       username: string;
       userCount: number;
       newHostId: string | null;
+      users: RoomUser[];
     }
   | {
       type: 'chat';
@@ -106,7 +118,18 @@ export type ServerMessage =
       cues: SubtitleCue[];
       username: string;
     }
-  | { type: 'file_info'; username: string; name: string; size: number }
+  | {
+      type: 'file_info';
+      username: string;
+      name: string;
+      size: number;
+      fingerprint?: string;
+    }
   | { type: 'pong'; clientTime: number; serverTime: number }
   | { type: 'host_update'; hostId: string }
-  | { type: 'room_state'; users: RoomUser[]; hostId: string };
+  | {
+      type: 'room_state';
+      selfId: string;
+      users: RoomUser[];
+      hostId: string;
+    };
