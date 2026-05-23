@@ -176,6 +176,21 @@ function handleMessage(ws, msg) {
       break;
     }
 
+    case 'subtitle_select': {
+      if (!ws.roomCode) return;
+      // Relay to OTHER peers — the sender already applied locally.
+      broadcast(
+        ws.roomCode,
+        {
+          type: 'subtitle_select',
+          label: msg.label,
+          username: ws.username,
+        },
+        ws.id,
+      );
+      break;
+    }
+
     case 'file_info': {
       if (!ws.roomCode) return;
       broadcast(ws.roomCode, {

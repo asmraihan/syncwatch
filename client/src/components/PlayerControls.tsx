@@ -5,6 +5,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
   type RefObject,
+  type TouchEvent as ReactTouchEvent,
 } from 'react';
 import { usePlayerStore } from '../stores/usePlayerStore';
 import { formatTime } from '../utils/formatTime';
@@ -42,6 +43,8 @@ export default function PlayerControls({
     x: number;
     time: number;
   } | null>(null);
+  const [isSeeking, setIsSeeking] = useState(false);
+  const [showVolumePanel, setShowVolumePanel] = useState(false);
 
   const seekRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<number | null>(null);
@@ -183,19 +186,29 @@ export default function PlayerControls({
   }, [showAndScheduleHide]);
 
   // ---- Seekbar interactions ----
-  const seekToClientX = (clientX: number) => {
+  // `seekAndPreview` is called for every drag/touchmove tick so the floating
+  // time tooltip stays under the user's finger or cursor as they scrub.
+  const seekAndPreview = (clientX: number) => {
     const el = seekRef.current;
     const v = videoRef.current;
     if (!el || !v || !v.duration) return;
     const rect = el.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const x = clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, x / rect.width));
     v.currentTime = ratio * v.duration;
+    setHoverPreview({
+      x: Math.max(0, Math.min(rect.width, x)),
+      time: ratio * v.duration,
+    });
   };
 
   const onSeekMouseDown = (e: ReactMouseEvent<HTMLDivElement>) => {
-    seekToClientX(e.clientX);
-    const onMove = (ev: MouseEvent) => seekToClientX(ev.clientX);
+    setIsSeeking(true);
+    seekAndPreview(e.clientX);
+    const onMove = (ev: MouseEvent) => seekAndPreview(ev.clientX);
     const onUp = () => {
+      setIsSeeking(false);
+      setHoverPreview(null);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
@@ -203,7 +216,28 @@ export default function PlayerControls({
     window.addEventListener('mouseup', onUp);
   };
 
+  const onSeekTouchStart = (e: ReactTouchEvent<HTMLDivElement>) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    e.stopPropagation();
+    setIsSeeking(true);
+    seekAndPreview(touch.clientX);
+  };
+  const onSeekTouchMove = (e: ReactTouchEvent<HTMLDivElement>) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    e.preventDefault(); // block page scroll while scrubbing
+    seekAndPreview(touch.clientX);
+  };
+  const onSeekTouchEnd = () => {
+    setIsSeeking(false);
+    // Keep the preview visible for a beat after release so the user sees
+    // where they landed; the next mouseleave/touch clears it.
+    window.setTimeout(() => setHoverPreview(null), 600);
+  };
+
   const onSeekHover = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if (isSeeking) return; // drag handler is already updating the preview
     const el = seekRef.current;
     const v = videoRef.current;
     if (!el || !v || !v.duration) return;
@@ -215,62 +249,118 @@ export default function PlayerControls({
     });
   };
 
+  // ---- Close the mobile volume popup on tap outside ----
+  useEffect(() => {
+    if (!showVolumePanel) return;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Element | null;
+      if (!target) return;
+      if (
+        target.closest('[data-volume-popup]') ||
+        target.closest('[data-volume-trigger]')
+      ) {
+        return;
+      }
+      setShowVolumePanel(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [showVolumePanel]);
+
   const playedPct = duration > 0 ? (currentTime / duration) * 100 : 0;
   const bufferedPct = duration > 0 ? (buffered / duration) * 100 : 0;
 
   return (
     <div
-      className={`absolute inset-x-0 bottom-0 select-none bg-gradient-to-t from-black/80 via-black/40 to-transparent px-3 pb-2 pt-8 backdrop-blur-sm transition-opacity duration-200 ${
+      className={`absolute inset-x-0 bottom-0 select-none bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-2 pt-8 backdrop-blur-sm transition-opacity duration-200 sm:px-3 ${
         visible ? 'opacity-100' : 'opacity-0'
       }`}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* Seekbar */}
+      {/* Seekbar — taller touch target (py-2) wraps the visible bar so
+          fingers don't need pixel-perfect aim. `touch-none` blocks the
+          browser's pull-to-refresh / scroll while scrubbing. */}
       <div
-        ref={seekRef}
         onMouseDown={onSeekMouseDown}
         onMouseMove={onSeekHover}
-        onMouseLeave={() => setHoverPreview(null)}
-        className="group relative mb-2 h-1.5 cursor-pointer rounded-full bg-player-buffer transition-all hover:h-2"
+        onMouseLeave={() => !isSeeking && setHoverPreview(null)}
+        onTouchStart={onSeekTouchStart}
+        onTouchMove={onSeekTouchMove}
+        onTouchEnd={onSeekTouchEnd}
+        className="group relative -mx-1 mb-1 cursor-pointer touch-none px-1 py-2"
       >
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-white/20"
-          style={{ width: `${bufferedPct}%` }}
-        />
-        <div
-          className="absolute inset-y-0 left-0 rounded-full bg-player-progress"
-          style={{ width: `${playedPct}%` }}
-        />
-        <div
-          className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white opacity-0 transition-opacity group-hover:opacity-100"
-          style={{ left: `${playedPct}%` }}
-        />
-        {hoverPreview && (
+          ref={seekRef}
+          className="relative h-1.5 rounded-full bg-player-buffer transition-all group-hover:h-2"
+        >
           <div
-            className="pointer-events-none absolute bottom-4 -translate-x-1/2 rounded bg-black/80 px-1.5 py-0.5 text-xs text-white"
-            style={{ left: hoverPreview.x }}
-          >
-            {formatTime(hoverPreview.time)}
-          </div>
-        )}
+            className="absolute inset-y-0 left-0 rounded-full bg-white/20"
+            style={{ width: `${bufferedPct}%` }}
+          />
+          <div
+            className="absolute inset-y-0 left-0 rounded-full bg-player-progress"
+            style={{ width: `${playedPct}%` }}
+          />
+          <div
+            className={`absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white transition-opacity ${
+              isSeeking ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            }`}
+            style={{ left: `${playedPct}%` }}
+          />
+          {hoverPreview && (
+            <div
+              className="pointer-events-none absolute bottom-4 -translate-x-1/2 rounded bg-black/85 px-2 py-1 font-mono text-xs text-white shadow-lg"
+              style={{ left: hoverPreview.x }}
+            >
+              {formatTime(hoverPreview.time)}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Control bar */}
-      <div className="flex items-center gap-2 text-white">
-        <IconButton onClick={() => skip(-10)} title="Back 10s (←)">
+      {/* Control bar — collapses gracefully on narrow screens.
+          Hidden on < sm: skip ±10s buttons, volume slider (mute toggle stays).
+          Tighter gaps + smaller padding on mobile so the right-side controls
+          (audio / cc / fullscreen) always stay visible. */}
+      <div className="flex items-center gap-1 text-white sm:gap-2">
+        <IconButton
+          className="hidden sm:inline-flex"
+          onClick={() => skip(-10)}
+          title="Back 10s (←)"
+        >
           <BackIcon />
         </IconButton>
         <IconButton onClick={togglePlay} title="Play / Pause (Space)">
           {isPlaying ? <PauseIcon /> : <PlayIcon />}
         </IconButton>
-        <IconButton onClick={() => skip(10)} title="Forward 10s (→)">
+        <IconButton
+          className="hidden sm:inline-flex"
+          onClick={() => skip(10)}
+          title="Forward 10s (→)"
+        >
           <ForwardIcon />
         </IconButton>
 
-        <div className="ml-2 flex items-center gap-2">
-          <IconButton onClick={toggleMute} title="Mute (M)">
-            {muted || volume === 0 ? <MuteIcon /> : <VolumeIcon />}
-          </IconButton>
+        <div className="relative ml-0 flex items-center gap-1 sm:ml-2 sm:gap-2">
+          <span data-volume-trigger>
+            <IconButton
+              onClick={() => {
+                // Desktop has the inline horizontal slider beside the icon,
+                // so the icon click is a quick mute toggle. On mobile (no
+                // inline slider) the click opens the vertical popup.
+                const isDesktop = window.matchMedia(
+                  '(min-width: 640px)',
+                ).matches;
+                if (isDesktop) toggleMute();
+                else setShowVolumePanel((v) => !v);
+              }}
+              title="Volume (M to mute)"
+            >
+              {muted || volume === 0 ? <MuteIcon /> : <VolumeIcon />}
+            </IconButton>
+          </span>
+
+          {/* Desktop: inline horizontal slider */}
           <input
             type="range"
             min={0}
@@ -278,15 +368,49 @@ export default function PlayerControls({
             step={0.01}
             value={muted ? 0 : volume}
             onChange={(e) => setVolume(Number(e.target.value))}
-            className="h-1 w-20 accent-accent"
+            className="hidden h-1 w-20 accent-accent sm:block"
           />
+
+          {/* Mobile: vertical popup. The slider is a horizontal <input>
+              rotated -90deg — most reliable cross-browser way to render a
+              vertical range slider that responds to both touch and mouse. */}
+          {showVolumePanel && (
+            <div
+              data-volume-popup
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-full left-1/2 z-20 mb-2 flex -translate-x-1/2 flex-col items-center gap-2 rounded-lg border border-border bg-bg-elevated p-3 shadow-xl sm:hidden"
+            >
+              <div className="flex h-32 w-7 items-center justify-center">
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={muted ? 0 : volume}
+                  onChange={(e) => setVolume(Number(e.target.value))}
+                  className="h-1 w-28 origin-center -rotate-90 accent-accent"
+                />
+              </div>
+              <span className="font-mono text-[10px] tabular-nums text-text-secondary">
+                {Math.round((muted ? 0 : volume) * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={toggleMute}
+                className="rounded p-1 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                title={muted ? 'Unmute' : 'Mute'}
+              >
+                {muted || volume === 0 ? <MuteIcon /> : <VolumeIcon />}
+              </button>
+            </div>
+          )}
         </div>
 
-        <span className="ml-2 font-mono text-xs tabular-nums text-white/80">
+        <span className="ml-1 whitespace-nowrap font-mono text-[10px] tabular-nums text-white/80 sm:ml-2 sm:text-xs">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-0.5 sm:gap-2">
           {onToggleAudioTracks && (
             <IconButton onClick={onToggleAudioTracks} title="Audio tracks">
               <AudioTracksIcon />
@@ -312,17 +436,19 @@ function IconButton({
   children,
   onClick,
   title,
+  className = '',
 }: {
   children: React.ReactNode;
   onClick: () => void;
   title: string;
+  className?: string;
 }) {
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
-      className="rounded p-1.5 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+      className={`inline-flex items-center justify-center rounded p-1 text-white/80 transition-colors hover:bg-white/10 hover:text-white sm:p-1.5 ${className}`}
     >
       {children}
     </button>

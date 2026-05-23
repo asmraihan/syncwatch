@@ -69,6 +69,7 @@ export type ClientMessage =
   | { type: 'buffer_start' }
   | { type: 'buffer_end' }
   | { type: 'subtitle_share'; label: string; cues: SubtitleCue[] }
+  | { type: 'subtitle_select'; label: string | null }
   | { type: 'file_info'; name: string; size: number; fingerprint?: string }
   | { type: 'ping'; clientTime: number };
 
@@ -116,6 +117,11 @@ export type ServerMessage =
       type: 'subtitle_share';
       label: string;
       cues: SubtitleCue[];
+      username: string;
+    }
+  | {
+      type: 'subtitle_select';
+      label: string | null;
       username: string;
     }
   | {

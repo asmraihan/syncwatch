@@ -44,10 +44,16 @@ export function useSubtitles() {
     [send, show],
   );
 
-  // ---- Activate or disable a track ----
-  const selectTrack = useCallback((label: string | null) => {
-    usePlayerStore.getState().setActiveTrack(label);
-  }, []);
+  // ---- Activate or disable a track (synced across peers) ----
+  const selectTrack = useCallback(
+    (label: string | null) => {
+      usePlayerStore.getState().setActiveTrack(label);
+      // Broadcast to other users so everyone watches the same subtitle track.
+      // Timing offset stays local-only — each viewer adjusts independently.
+      send({ type: 'subtitle_select', label });
+    },
+    [send],
+  );
 
   // ---- Adjust local-only timing offset (regenerate VTT blob) ----
   const setOffset = useCallback(async (label: string, offset: number) => {

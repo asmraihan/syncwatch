@@ -204,6 +204,24 @@ export default function RoomPage() {
             timestamp: Date.now(),
           });
           break;
+
+        case 'subtitle_select':
+          // Apply via the store directly so we don't re-broadcast and loop.
+          // If the named track hasn't been ingested yet, setting the label
+          // is still safe — the VideoPlayer effect will activate it as soon
+          // as a matching <track> appears.
+          player.setActiveTrack(msg.label);
+          room.addMessage({
+            id: newMsgId(),
+            type: 'system',
+            username: '',
+            color: '',
+            content: msg.label
+              ? `${msg.username} switched subtitles to "${msg.label}"`
+              : `${msg.username} turned subtitles off`,
+            timestamp: Date.now(),
+          });
+          break;
       }
     },
     [show],

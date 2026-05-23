@@ -70,7 +70,7 @@ export default function AudioTrackPanel({ videoRef }: AudioTrackPanelProps) {
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="absolute bottom-20 right-3 z-10 w-72 rounded-lg border border-border bg-bg-elevated p-3 text-sm shadow-xl"
+      className="absolute bottom-20 right-2 z-10 w-[min(18rem,calc(100vw-1rem))] rounded-lg border border-border bg-bg-elevated p-3 text-sm shadow-xl sm:right-3"
     >
       <p className="mb-2 font-medium">Audio</p>
 
